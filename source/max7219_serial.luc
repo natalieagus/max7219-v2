@@ -1,0 +1,130 @@
+module max7219_serial #(
+  CHAIN = 1 : CHAIN > 0,
+  SPEED = 4 : SPEED >= 4
+  ) 
+(
+    input clk,  // clock
+    input rst,  // reset
+    input addr_in[8*CHAIN],
+    input din[8*CHAIN],
+    input start,
+    output cs,
+    output dout,
+    output sck,
+    output busy,
+    output debug_state[8],
+    output debug_counter[8],
+    output debug_writer[$clog2(8*CHAIN)*2],
+    output debug_data[8],
+    output debug_address[8]
+  ) {
+  
+    enum States {
+        IDLE, TRANSFER_ADDR, TRANSFER_DATA, SET_LATCH, WAIT_LATCH
+    }
+  .clk (clk) {
+      edge_detector slowclock_edge(#RISE(1), #FALL(0));
+      .rst(rst) { 
+        dff state[$width(States)](#INIT(States.IDLE));
+        counter slowclock(#SIZE(30));
+        dff address_write_pointer[$clog2(8*CHAIN)](#INIT(0));
+        dff data_write_pointer[$clog2(8*CHAIN)](#INIT(0));
+        dff data[8*CHAIN](#INIT(0));
+        dff addr[8*CHAIN](#INIT(0));
+        dff load_state(#INIT(1)); 
+        dff chain[$width(CHAIN)](#INIT(0));
+    }
+  }
+  
+
+  sig slowclock_value;
+
+  always  {
+    slowclock_value = slowclock.value[SPEED]; // index 4 is minimum, because 100/2^4 Mhz = 6.125Mhz, set to higher value like 27 to debug
+    slowclock_edge.in = slowclock_value;
+    sck = slowclock_value;
+    
+    
+    busy = state.q != States.IDLE;  // busy when not idle
+    dout = 0;
+    
+    debug_state = 8b11111111;
+    debug_counter = 0;
+    debug_writer = c{address_write_pointer.q, data_write_pointer.q};
+    debug_data = data.q;
+    debug_address = addr.q;
+    
+    case (state.q) {
+        
+      States.IDLE:
+        debug_state = 8b1111; // In IDLE state
+        if (start) { // if we should start a new transfer
+          // save our data and address values to memory
+          addr.d = addr_in;
+          data.d = din;
+          
+          // reset the address writer dff
+          address_write_pointer.d = 0;
+          
+          // reset the data writer dff
+          data_write_pointer.d = 0;
+          
+          // reset the chain register
+          chain.d = 0;
+          
+          // Toggle the load pin (makes the 7219 start listening for data)
+          load_state.d = 0;
+          
+          state.d = States.TRANSFER_ADDR;
+        }
+        
+        
+      States.TRANSFER_ADDR:
+        debug_state = 8b11; // in transfer addr state
+        dout = addr.q[address_write_pointer.q];
+        if (slowclock_edge.out){
+            address_write_pointer.d = address_write_pointer.q + 1; // write the next address bit   
+        }
+        
+        if (&address_write_pointer.q[2:0] & slowclock_edge.out){ // if the lower 3 bits of write_pointer is 3b111
+          state.d = States.TRANSFER_DATA;
+        }
+        
+      States.TRANSFER_DATA: 
+        debug_state = 8b111; // in transfer data state 
+        dout = data.q[data_write_pointer.q];
+        
+        if (slowclock_edge.out){
+            data_write_pointer.d = data_write_pointer.q + 1; // write the next data bit
+        }
+        
+        if (&data_write_pointer.q[2:0] & slowclock_edge.out){ // if the lower 3 bits of write_pointer is 3b111
+          
+          // check if we have written to all matrices in the chain 
+          if (chain.q == CHAIN){
+          // we have not finished writing all sets of 16 bits data (address+data) to all matrices/segs in the chain 
+            chain.d = chain.q + 1;
+          // proceed to the next set
+            state.d = States.TRANSFER_ADDR;
+          }
+          else{
+            // we have pumped all sets of 16 bits data to the chain, time to latch 
+            state.d = States.SET_LATCH;
+          }
+        }
+      
+      States.SET_LATCH:
+        // latch the data by pulsing the load pin (cs)
+        load_state.d = 1;
+        state.d = States.WAIT_LATCH;
+      
+      States.WAIT_LATCH:
+        if (slowclock_edge.out){
+          state.d = States.IDLE;
+        }
+    }
+    
+    cs = load_state.q;
+
+  }
+}

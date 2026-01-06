@@ -1,0 +1,100 @@
+module au_top (
+    input clk,              // 100MHz clock
+    input rst_n,            // reset button (active low)
+    output led [8],         // 8 user controllable LEDs
+    input usb_rx,           // USB->Serial input
+    output usb_tx,          // USB->Serial output
+    output io_led [3][8],   // LEDs on IO Shield
+    output io_segment[8],      // 7-segment LEDs on IO Shield
+    output io_select[4],      // Digit select on IO Shield
+    input io_button [5],    // 5 buttons on IO Shield
+    input io_dip [3][8]     // DIP switches on IO Shield
+) {
+    
+    const CHAIN = 2 
+    const SPEED = 5
+    sig rst                  // reset signal
+    
+    max7219_driver max7219_driver(#CHAIN(CHAIN), #SPEED(SPEED), .clk(clk), .rst(rst)) 
+    reset_conditioner reset_cond(.clk(clk))
+    
+    const A = $reverse(b01110111)
+    const B = $reverse(b00011111)
+    const D = $reverse(b00111101)
+    const E = $reverse(b01001111)
+    const F = $reverse(b01000111)
+    
+    const TESTWORDS = {$reverse({c{CHAINx{B}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{F}}}), 
+        $reverse({c{CHAINx{D}}, c{CHAINx{E}}, c{CHAINx{A}}, c{CHAINx{D}}, c{CHAINx{B}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{F}}})}
+    
+    dff done(#INIT(0),.clk(clk))
+    dff sample_index(#INIT(0), .clk(clk))
+    counter delay(#SIZE(1), #DIV(27),.rst(rst), .clk(clk))
+    edge_detector delay_edge(#RISE(1), #FALL(0), .clk(clk), .in(delay.value))
+    
+    always {
+        reset_cond.in = ~rst_n   // input raw inverted reset signal
+        rst = reset_cond.out     // conditioned reset
+        
+        led = c{3b0, io_button}  // connect buttons to LEDs
+        
+        usb_tx = usb_rx          // loop serial port
+        
+        
+        io_segment = 8h00 
+        io_select = 4h0 
+        io_led = 3x{{h00}} 
+        
+        max7219_driver.new = 0
+        
+        // at first, it will show DEADBEEF
+        max7219_driver.segment_values = TESTWORDS[sample_index.q] // topmost row will display B for [1] or D for [0]
+        
+        
+        // this is a test code, do not copy blindly 
+        // check if done, display a new value immediately
+        if (done.q == 0){
+            done.d = max7219_driver.done
+        }
+        
+        if (done.q & delay_edge.out) { // only change when ~1 second has passed
+            sample_index.d = sample_index.q + 1
+            max7219_driver.new = 1 // if new == 1, max7219 will refresh
+            done.d = 0 // reset, so it loops back up
+        }
+        
+        // ------- DEBUG SIGNALS ------ // 
+        led = max7219_driver.debug_state
+        led[7:4] = max7219_driver.debug_driver_state
+        
+        io_led[0] = max7219_driver.debug_data
+        io_led[1] = max7219_driver.debug_address
+        io_led[2] = max7219_driver.debug_writer // only view the data writer counter
+
+        if (io_dip[2] == 8d1){
+            io_led[2][7] = max7219_driver.max7219_data
+            io_led[2][6] = max7219_driver.max7219_load
+            io_led[2][5] = max7219_driver.max7219_clock
+        }
+        
+        else if (io_dip[2] == 8d2){
+            // show segments received by driver 
+            io_led[1] = max7219_driver.debug_segment_current  
+        }
+        
+        else if (io_dip[2] == 8d3){
+            io_led[1] = max7219_driver.debug_segment_original
+        }
+        else if (io_dip[2] == 8d4){
+            io_led[1] = max7219_driver.debug_digit_index_original
+        }
+        // -------------------------------- //
+        
+        
+        // actual output
+        io_segment[4] = max7219_driver.max7219_data // A45 
+        io_segment[3] = max7219_driver.max7219_load // A46
+        io_segment[1] = max7219_driver.max7219_clock // A6
+        
+    }
+}

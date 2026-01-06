@@ -1,0 +1,212 @@
+module max7219_driver #(
+    CHAIN = 1: CHAIN > 0,
+    SPEED = 4:  SPEED >= 4
+)(
+    input clk,  // clock
+    input rst,  // reset
+    input new,
+    input segment_values[8][8*CHAIN], // 8x8*CHAIN LED matrix values, off or on each pixel, assume already reversed
+    output done,
+    output max7219_load, 
+    output max7219_data,
+    output max7219_clock,
+    
+    // debug signals
+    output debug_state[8],
+    output debug_counter[8],
+    output debug_writer[$clog2(8*CHAIN)*2],
+    output debug_data[8],
+    output debug_address[8],
+    output debug_driver_state[4],
+    output debug_digit_index[8],
+    output debug_segment_current[8],
+    output debug_segment_original[8],
+    output debug_digit_index_original[8]
+) {
+
+    sig max_addr[8*CHAIN]
+    sig max_data[8*CHAIN]
+    sig current_digit_address[8*CHAIN]
+    sig current_segment_values[8*CHAIN]
+    
+    enum States {
+        INITIALIZE, // wait until max7219 is ready
+        IDLE, //  wait for new input 
+        SEND_INITIAL_SHUTDOWN, // shut every pixel down and go to no decode and set scan to ALL digits
+        SEND_SHUTDOWN, // shut every pixel down
+        SEND_DISPLAY_TEST, // test all LED flash, dont use this on prod
+        SEND_OFF_DISPLAY_TEST, // off flashing of LED, dont use this in prod
+        SEND_NO_DECODE, // turn off decode reg and set each digit directly
+        SEND_SCAN_ALL_DIGITS, // scanline register to switch on all rows (digits)
+        SEND_WORD, // write 8 digits of data to DIGIT register
+        SEND_TURN_ON  // turn it on again to show the latest update
+    }
+    
+    .clk(clk) {
+        .rst(rst) {
+            max7219_serial max(#CHAIN(CHAIN), #SPEED(SPEED))
+            dff state[$width(States)](#INIT(States.INITIALIZE))
+            dff digit_index[3](#INIT(0))
+        }
+    }
+    
+    // we reverse the address of the DIGIT REG address for 7219 
+    const DIGIT_ADDRESS = 
+    {
+        $reverse(4h08),
+        $reverse(4h07),
+        $reverse(4h06),
+        $reverse(4h05),
+        $reverse(4h04),
+        $reverse(4h03),
+        $reverse(4h02),
+        $reverse(4h01)
+    }
+    
+    
+    always {
+        
+        max_addr = 0
+        max_data = 0
+        max.start = 0
+        
+        debug_driver_state = 0
+        
+        // reverse should not be used with non constant
+        current_digit_address = c{CHAINx{DIGIT_ADDRESS[digit_index.q[2:0]]}} //MAX 7219 starts from DIGIT reg address 1, not 0
+        current_segment_values = segment_values[digit_index.q[2:0]]
+        
+        debug_digit_index = current_digit_address 
+        debug_digit_index_original = digit_index.q+1
+        debug_segment_current = current_segment_values // is 0, reverse not working
+        debug_segment_original = segment_values[digit_index.q[2:0]]
+        
+        done = 0 // not done unless we have reached IDLE
+        
+        
+        case(state.q) {
+            States.INITIALIZE:
+                // deliberate delay, for necessary init. You may skip this state. 
+                debug_driver_state = b0000
+                state.d = States.SEND_INITIAL_SHUTDOWN
+                
+                
+            States.SEND_INITIAL_SHUTDOWN:
+                debug_driver_state = b0001 
+                max.start = 1
+                max_addr = c{CHAINx{$reverse(h0C)}}
+                max_data = c{CHAINx{$reverse(h00)}}
+                
+                if(max.busy != 1) { 
+                    state.d = States.SEND_NO_DECODE
+                }
+                
+            States.SEND_SHUTDOWN:
+                debug_driver_state = b0001 
+                max.start = 1
+                max_addr = c{CHAINx{$reverse(h0C)}}
+                max_data = c{CHAINx{$reverse(h00)}}
+                
+                if(max.busy != 1) { 
+                    state.d = States.SEND_WORD
+                }    
+                
+                
+            States.SEND_DISPLAY_TEST:
+                debug_driver_state = b0011
+                max.start = 1
+                max_addr = c{CHAINx{$reverse(h0F)}}
+                max_data = c{CHAINx{$reverse(h01)}} // loop here to test
+                
+                if(max.busy != 1) { 
+                    state.d = States.SEND_OFF_DISPLAY_TEST
+                }       
+                
+                
+            States.SEND_OFF_DISPLAY_TEST:
+                debug_driver_state = b0100
+                max.start = 1
+                max_addr = c{CHAINx{$reverse(h0F)}}
+                max_data = c{CHAINx{$reverse(h00)}} // loop here to test
+                
+                if(max.busy != 1) { 
+                    state.d = States.SEND_NO_DECODE
+                    
+                }          
+                
+                
+            States.SEND_NO_DECODE:
+                debug_driver_state = b0101
+                max.start = 1
+                max_addr = c{CHAINx{$reverse(h09)}}
+                max_data = c{CHAINx{$reverse(h00)}}
+                
+                if(max.busy != 1) { 
+                    state.d = States.SEND_SCAN_ALL_DIGITS
+                }   
+                
+            States.SEND_SCAN_ALL_DIGITS:
+                debug_driver_state = b0110
+                max.start = 1
+                max_addr = c{CHAINx{$reverse(h0B)}}
+                max_data = c{CHAINx{$reverse(h07)}} // scan line register shows every digit
+                
+                if(max.busy != 1) { 
+                    state.d = States.SEND_WORD
+                }   
+                
+            States.SEND_WORD:
+                debug_driver_state = b0111
+                
+                max.start = 1
+                max_addr = current_digit_address
+                max_data = current_segment_values
+                
+                if(max.busy != 1) { 
+                    // write to next digit reg address immediately since there's no other matrix in the chain
+                    digit_index.d = digit_index.q + 1
+                    
+                    
+                    if(&digit_index.q) { // have reached reg DIGIT address 8
+                        state.d = States.SEND_TURN_ON // all segments are written     
+                    }
+                }
+                
+            States.SEND_TURN_ON:
+                debug_driver_state = b0010 // this will show when max7219 is finishing the previous state (SHUTDOWN) bit loading
+                max.start = 1
+                max_addr = c{CHAINx{$reverse(h0C)}}
+                max_data = c{CHAINx{$reverse(h01)}}
+                
+                if(max.busy != 1) { 
+                    state.d = States.IDLE
+                }
+                
+            States.IDLE:
+                debug_driver_state = b1111
+                max_addr = c{CHAINx{8b0}}
+                max_data = c{CHAINx{8b0}}
+                done = 1
+                if (new) {
+                    digit_index.d = 0
+                    state.d = States.SEND_SHUTDOWN // turn off all LED before we are loading
+                }
+                
+                
+        }
+        
+        
+        
+        max.addr_in = max_addr
+        max.din = max_data
+        max7219_clock = max.sck
+        max7219_data = max.dout
+        max7219_load = max.cs
+        
+        debug_state = max.debug_state
+        debug_counter = max.debug_counter
+        debug_writer = max.debug_writer
+        debug_data = max.debug_data
+        debug_address = max.debug_address
+        
+    }}
