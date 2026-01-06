@@ -2,6 +2,8 @@
 
 The MAX7219/MAX7221 is a compact, serial input/ output common-cathode display drivers that interface microprocessors (μPs) to 7-segment numeric LED displays of up to 8 digits, bar-graph displays, or 64 individual LEDs. This driver is written in [LucidV2](https://alchitry.com/tutorials/lucid-reference/) and is meant to be run on [Alchitry Au](https://www.sparkfun.com/products/16527) Boards + [Alchitry Br](https://www.sparkfun.com/products/16524) prototype element board.
 
+Refer to the [documentation](docs/max7219-max7221.pdf) on how it works.
+
 ### Demo
 
 Upon compilation, connect the 3 pins of MAX7219: `data, load, clock` to Br Pins `A45, A46, A6` respectively. This connection can be found at the bottom of `au_top.luc`:
@@ -29,6 +31,8 @@ This is `DEADBEEF`:
 
 And this is `BEEEEEEF`:
 ![beeeeeef](images/beeeeeef.png)
+
+Note that in a daisy chain, the frame intended for the last chip in the chain must be shifted first, because it has to pass through the earlier chips.
 
 ### Usage
 
