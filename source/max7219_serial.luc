@@ -40,7 +40,7 @@ module max7219_serial #(
   sig slowclock_value;
 
   always  {
-    slowclock_value = slowclock.value[SPEED]; // index 4 is minimum, because 100/2^4 Mhz = 6.125Mhz, set to higher value like 27 to debug
+    slowclock_value = slowclock.value[SPEED]; // index 4 is minimum, because 100/2^4 Mhz = 6.25Mhz, set to higher value like 27 to debug
     slowclock_edge.in = slowclock_value;
     sck = slowclock_value;
     
