@@ -4,7 +4,7 @@ module max7219_driver #(
 )(
     input clk,  // clock
     input rst,  // reset
-    input new,
+    input new_input_present,
     input segment_values[8][8*CHAIN], // 8x8*CHAIN LED matrix values, off or on each pixel, assume already reversed
     output done,
     output max7219_load, 
@@ -187,7 +187,7 @@ module max7219_driver #(
                 max_addr = c{CHAINx{8b0}}
                 max_data = c{CHAINx{8b0}}
                 done = 1
-                if (new) {
+                if (new_input_present) {
                     digit_index.d = 0
                     state.d = States.SEND_SHUTDOWN // turn off all LED before we are loading
                 }
