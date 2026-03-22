@@ -45,7 +45,7 @@ module au_top (
         io_select = 4h0 
         io_led = 3x{{h00}} 
         
-        max7219_driver.new = 0
+        max7219_driver.new_input_present = 0
         
         // at first, it will show DEADBEEF
         max7219_driver.segment_values = TESTWORDS[sample_index.q] // topmost row will display B for [1] or D for [0]
@@ -59,7 +59,7 @@ module au_top (
         
         if (done.q & delay_edge.out) { // only change when ~1 second has passed
             sample_index.d = sample_index.q + 1
-            max7219_driver.new = 1 // if new == 1, max7219 will refresh
+            max7219_driver.new_input_present = 1 // if new == 1, max7219 will refresh
             done.d = 0 // reset, so it loops back up
         }
         
