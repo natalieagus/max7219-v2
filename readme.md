@@ -70,6 +70,12 @@ At any given time, you MUST pump `input segment_values[8][8*CHAIN]` accordingly,
 
 All matrices in the chain will show `DEADBEEF`, then all will toggle to `BEEEEEEF` and back and forth in the demo value written in `alchitry_top`.
 
+### `SPEED` option
+
+The `SPEED` argument controls the speed of `sck` signal. 
+
+`sck` controls how quickly serial bits are shifted into the MAX7219. Increasing `sck` reduces the time needed to transmit each 16-bit command, so display updates and animations can be sent **faster**, especially when multiple MAX7219 modules are daisy-chained. Decreasing `sck` makes communication slower but can improve robustness if wiring is long or signal quality is poor. `sck` does not directly control LED brightness or the internal multiplexing rate of the MAX7219. Those are handled internally by the chip, with brightness set through the intensity register.
+
 ### Debug
 
 You can slow down clock in `max7219.luc` by setting the index of `slowclock.value` to be a bigger number. The minimum index is `4` as MAX7219 can work with `10MHz clock` at best.
