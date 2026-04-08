@@ -16,7 +16,8 @@ module max7219_serial #(
     output debug_counter[8],
     output debug_writer[$clog2(8*CHAIN)*2],
     output debug_data[8],
-    output debug_address[8]
+    output debug_address[8],
+    output debug_sclk
   ) {
   
     enum States {
@@ -40,6 +41,7 @@ module max7219_serial #(
   sig slowclock_value;
 
   always  {
+    debug_sclk = slowclock.value[SPEED]
     slowclock_value = slowclock.value[SPEED]; // index 4 is minimum, because 100/2^4 Mhz = 6.25Mhz, set to higher value like 27 to debug
     slowclock_edge.in = slowclock_value;
     sck = slowclock_value;
@@ -86,7 +88,7 @@ module max7219_serial #(
             address_write_pointer.d = address_write_pointer.q + 1; // write the next address bit   
         }
         
-        if (&address_write_pointer.q[2:0] & slowclock_edge.out){ // if the lower 3 bits of write_pointer is 3b111
+        if (&address_write_pointer.q[2:0] && slowclock_edge.out){ // if the lower 3 bits of write_pointer is 3b111
           state.d = States.TRANSFER_DATA;
         }
         
@@ -98,10 +100,10 @@ module max7219_serial #(
             data_write_pointer.d = data_write_pointer.q + 1; // write the next data bit
         }
         
-        if (&data_write_pointer.q[2:0] & slowclock_edge.out){ // if the lower 3 bits of write_pointer is 3b111
+        if (&data_write_pointer.q[2:0] && slowclock_edge.out){ // if the lower 3 bits of write_pointer is 3b111
           
           // check if we have written to all matrices in the chain 
-          if (chain.q == CHAIN){
+          if (chain.q < CHAIN){
           // we have not finished writing all sets of 16 bits data (address+data) to all matrices/segs in the chain 
             chain.d = chain.q + 1;
           // proceed to the next set
@@ -111,6 +113,7 @@ module max7219_serial #(
             // we have pumped all sets of 16 bits data to the chain, time to latch 
             state.d = States.SET_LATCH;
           }
+            
         }
       
       States.SET_LATCH:

@@ -11,8 +11,8 @@ module au_top (
     input io_dip [3][8]     // DIP switches on IO Shield
 ) {
     
-    const CHAIN = 2 
-    const SPEED = 5
+    const CHAIN = 1
+    const SPEED = 4
     sig rst                  // reset signal
     
     max7219_driver max7219_driver(#CHAIN(CHAIN), #SPEED(SPEED), .clk(clk), .rst(rst)) 
@@ -24,12 +24,38 @@ module au_top (
     const E = $reverse(b01001111)
     const F = $reverse(b01000111)
     
-    const TESTWORDS = {$reverse({c{CHAINx{B}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{F}}}), 
-        $reverse({c{CHAINx{D}}, c{CHAINx{E}}, c{CHAINx{A}}, c{CHAINx{D}}, c{CHAINx{B}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{F}}})}
+
+    const TESTWORDS = {
+        $reverse({c{CHAINx{B}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{F}}}), 
+        $reverse({c{CHAINx{D}}, c{CHAINx{E}}, c{CHAINx{A}}, c{CHAINx{D}}, c{CHAINx{B}}, c{CHAINx{E}}, c{CHAINx{E}}, c{CHAINx{F}}}),
+        $reverse({c{CHAINx{A}}, c{CHAINx{A}}, c{CHAINx{A}}, c{CHAINx{A}}, c{CHAINx{A}}, c{CHAINx{A}}, c{CHAINx{A}}, c{CHAINx{A}}}),
+        $reverse({c{CHAINx{F}}, c{CHAINx{F}}, c{CHAINx{F}}, c{CHAINx{F}}, c{CHAINx{F}}, c{CHAINx{F}}, c{CHAINx{F}}, c{CHAINx{F}}})
+    }
     
+    /*
+    const TESTWORDS = {
+         $reverse({c{CHAINx{8h01}}, 
+                c{CHAINx{8h02}}, 
+                c{CHAINx{8h04}}, 
+                c{CHAINx{8h08}}, 
+                c{CHAINx{8h10}}, 
+                c{CHAINx{8h20}}, 
+                c{CHAINx{8h40}}, 
+                c{CHAINx{8h80}}}),
+        
+                {c{CHAINx{8h01}}, 
+                c{CHAINx{8h02}}, 
+                c{CHAINx{8h04}}, 
+                c{CHAINx{8h08}}, 
+                c{CHAINx{8h10}}, 
+                c{CHAINx{8h20}}, 
+                c{CHAINx{8h40}}, 
+                c{CHAINx{8h80}}}
+    }*/
+
     dff done(#INIT(0),.clk(clk))
-    dff sample_index(#INIT(0), .clk(clk))
-    counter delay(#SIZE(1), #DIV(27),.rst(rst), .clk(clk))
+    dff sample_index[$clog2($width(TESTWORDS,0))](#INIT(0), .clk(clk))
+    counter delay(#SIZE(1), #DIV($is_sim() ? 10 : 27),.rst(rst), .clk(clk))
     edge_detector delay_edge(#RISE(1), #FALL(0), .clk(clk), .in(delay.value))
     
     always {
@@ -48,8 +74,7 @@ module au_top (
         max7219_driver.new_input_present = 0
         
         // at first, it will show DEADBEEF
-        max7219_driver.segment_values = TESTWORDS[sample_index.q] // topmost row will display B for [1] or D for [0]
-        
+        max7219_driver.segment_values = TESTWORDS[sample_index.q] 
         
         // this is a test code, do not copy blindly 
         // check if done, display a new value immediately
@@ -64,11 +89,14 @@ module au_top (
         }
         
         // ------- DEBUG SIGNALS ------ // 
-        led = max7219_driver.debug_state
-        led[7:4] = max7219_driver.debug_driver_state
+        led = sample_index.q
+        led[5] = max7219_driver.debug_sclk
+        led[6] = done.q
+        led[7] = delay.value
         
-        io_led[0] = max7219_driver.debug_data
-        io_led[1] = max7219_driver.debug_address
+        io_led[0] = max7219_driver.debug_driver_state
+        io_led[0][7:4] = max7219_driver.debug_state
+        io_led[1] = max7219_driver.debug_segment_current
         io_led[2] = max7219_driver.debug_writer // only view the data writer counter
 
         if (io_dip[2] == 8d1){

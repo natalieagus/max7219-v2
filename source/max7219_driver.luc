@@ -21,7 +21,8 @@ module max7219_driver #(
     output debug_digit_index[8],
     output debug_segment_current[8],
     output debug_segment_original[8],
-    output debug_digit_index_original[8]
+    output debug_digit_index_original[8], 
+    output debug_sclk
 ) {
 
     sig max_addr[8*CHAIN]
@@ -51,16 +52,16 @@ module max7219_driver #(
     }
     
     // we reverse the address of the DIGIT REG address for 7219 
-    const DIGIT_ADDRESS = 
+    const DIGIT_ADDRESS =
     {
-        $reverse(4h08),
-        $reverse(4h07),
-        $reverse(4h06),
-        $reverse(4h05),
-        $reverse(4h04),
-        $reverse(4h03),
-        $reverse(4h02),
-        $reverse(4h01)
+        $reverse(8h08),
+        $reverse(8h07),
+        $reverse(8h06),
+        $reverse(8h05),
+        $reverse(8h04),
+        $reverse(8h03),
+        $reverse(8h02),
+        $reverse(8h01)
     }
     
     
@@ -78,7 +79,7 @@ module max7219_driver #(
         
         debug_digit_index = current_digit_address 
         debug_digit_index_original = digit_index.q+1
-        debug_segment_current = current_segment_values // is 0, reverse not working
+        debug_segment_current = current_segment_values 
         debug_segment_original = segment_values[digit_index.q[2:0]]
         
         done = 0 // not done unless we have reached IDLE
@@ -208,5 +209,7 @@ module max7219_driver #(
         debug_writer = max.debug_writer
         debug_data = max.debug_data
         debug_address = max.debug_address
+        debug_sclk = max.debug_sclk
+    
         
     }}
